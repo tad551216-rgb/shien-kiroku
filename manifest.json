@@ -1,0 +1,14 @@
+{
+  "name": "支援きろく帖",
+  "short_name": "きろく帖",
+  "description": "放課後等デイサービスの実績記録・支援記録・保護者サイン（つくる手帖）",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f4ea",
+  "theme_color": "#2c5077",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
