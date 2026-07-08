@@ -257,6 +257,14 @@ dialog .dfoot{
     <input type="file" id="fileRenkei" accept=".json,application/json" style="display:none;">
     <div id="renkeiResult" style="margin-top:10px;"></div>
   </div>
+  <h2 class="sec">端末間で記録をやり取り（ニックネーム）</h2>
+  <div class="card">
+    <p style="font-size:14px; margin:0 0 8px;">この日の記録を、<b>実名・受給者証番号を含めず</b>ニックネームだけで書き出します。LINEやメモで別の端末に送り、受け取った側で取り込むと、ニックネームの一致する児童に記録が入ります。</p>
+    <button class="btn s wide" id="btnShareOut">📤 この日の記録を書き出す</button>
+    <button class="btn o wide" id="btnShareIn">📥 受け取った記録を取り込む</button>
+    <div id="shareResult" style="margin-top:10px;"></div>
+    <p class="note">保護者サインの画像は含まれません（サインは各端末で取得してください）。児童タブで全員にニックネームを設定しておくと確実です。</p>
+  </div>
   <p class="note">おむかえルート帖側の操作：設定 →「JSONファイルで保存」。学校名が一致した児童だけに反映されます。到着後の「入室時刻」は、これとは別に施設で記録してください（実績は入室〜退室で算定します）。</p>
 </section>
 
@@ -301,6 +309,7 @@ dialog .dfoot{
   <div class="dbody">
     <div class="fld"><label>氏名 *</label><input type="text" id="cName"></div>
     <div class="fld"><label>ふりがな</label><input type="text" id="cKana"></div>
+    <div class="fld"><label>ニックネーム（データやり取り用・実名の代わりに使います）</label><input type="text" id="cNick" placeholder="例：たろちゃん"></div>
     <div class="grid2">
       <div class="fld"><label>受給者証番号</label><input type="text" id="cJukyu" inputmode="numeric" autocomplete="off"></div>
       <div class="fld"><label>契約支給量（日/月）</label><input type="text" id="cShikyu" inputmode="numeric" autocomplete="off"></div>
@@ -339,6 +348,19 @@ dialog .dfoot{
   <div class="dhead">この日だけ利用する児童</div>
   <div class="dbody" id="guestList"></div>
   <div class="dfoot"><button class="btn o sm" id="btnGuestClose">とじる</button></div>
+</dialog>
+
+<!-- 記録取り込みダイアログ -->
+<dialog id="dlgShareIn">
+  <div class="dhead">受け取った記録を取り込む</div>
+  <div class="dbody">
+    <p style="font-size:13px; margin:0 0 8px; color:#5c574c;">LINEやメモで受け取ったテキストを、そのまま貼り付けてください。</p>
+    <textarea id="shareInText" style="min-height:120px;" placeholder="支援きろく帖の記録 {&quot;app&quot;:…"></textarea>
+  </div>
+  <div class="dfoot">
+    <button class="btn o sm" id="btnShareInCancel">やめる</button>
+    <button class="btn p sm" id="btnShareInDo">取り込む</button>
+  </div>
 </dialog>
 
 <div id="toast"></div>
@@ -659,7 +681,7 @@ function renderChildren(){
     const row=document.createElement('div');
     row.className='childRow';
     const days=(c.days||[]).map(d=>WNAMES[d]).join('・');
-    row.innerHTML='<div class="nm">'+esc(c.name)+(c.active===false?' <span class="chip">休止中</span>':'')+
+    row.innerHTML='<div class="nm">'+esc(c.name)+(c.nick?' <span class="chip g">'+esc(c.nick)+'</span>':'')+(c.active===false?' <span class="chip">休止中</span>':'')+
       '<small>'+esc(c.school||'')+(days?'　'+days+'曜':'')+(c.jukyu?'　受給者証 '+esc(c.jukyu):'')+'</small></div>'+
       '<button class="btn o sm">編集</button>';
     row.querySelector('button').addEventListener('click',()=>openChildDlg(c));
@@ -682,6 +704,7 @@ function openChildDlg(c){
   $('#dlgChildTitle').textContent=c?'児童の情報を編集':'児童を追加';
   $('#cName').value=c?c.name:'';
   $('#cKana').value=c?c.kana||'':'';
+  $('#cNick').value=c?c.nick||'':'';
   $('#cJukyu').value=c?c.jukyu||'':'';
   $('#cShikyu').value=c?c.shikyu||'':'';
   $('#cSchool').value=c?c.school||'':'';
@@ -697,8 +720,10 @@ $('#btnChildSave').addEventListener('click',async ()=>{
   const name=$('#cName').value.trim();
   if(!name){ toast('氏名を入力してください'); return; }
   const days=$$('#cDays label.on').map(l=>+l.dataset.d);
+  const nick=$('#cNick').value.trim();
+  if(nick && children.some(c=>c.nick===nick && c!==editingChild)){ toast('同じニックネームの児童がいます'); return; }
   const data={
-    name, kana:$('#cKana').value.trim(), jukyu:$('#cJukyu').value.trim(),
+    name, kana:$('#cKana').value.trim(), nick, jukyu:$('#cJukyu').value.trim(),
     shikyu:$('#cShikyu').value.trim(), school:$('#cSchool').value.trim(),
     guardian:$('#cGuardian').value.trim(), memo:$('#cMemo').value.trim(),
     days, active:true
@@ -772,6 +797,74 @@ async function applyRoute(s){
     (missed.length?'<div class="note"><b>学校名が一致しなかった児童：</b><br>'+missed.map(c=>esc(c.name)+'（'+esc(c.school||'学校名未登録')+'）').join('<br>')+'<br>児童タブで学校名の表記を揃えると自動反映されます。</div>':'');
   toast(hit+'名に反映しました');
 }
+
+/* ============ 端末間のやり取り（ニックネーム） ============ */
+const SHARE_FIELDS=['kata','inTime','outTime','pickGo','pickGoTime','pickBack','extend',
+  'temp','med','medNote','meal','toilet','activity','episode','hiyari','hiyariNote','kousoku','kousokuNote','staff'];
+$('#btnShareOut').addEventListener('click',async ()=>{
+  const date=$('#renkeiDate').value||curDate;
+  const dayRecs=(await idbByDate(date)).filter(r=>r.kata);
+  if(!dayRecs.length){ toast('この日の記録がありません'); return; }
+  const noNick=[]; const items=[];
+  dayRecs.forEach(r=>{
+    const c=childOf(r.childId);
+    if(!c.name) return;
+    if(!c.nick){ noNick.push(c.name); return; }
+    const o={nick:c.nick};
+    SHARE_FIELDS.forEach(f=>{ if(r[f]!==''&&r[f]!==false&&r[f]!=null) o[f]=r[f]; });
+    items.push(o);
+  });
+  if(!items.length){ toast('ニックネーム設定済みの児童の記録がありません'); return; }
+  const payload={app:'shien-kiroku-share', ver:1, date, recs:items};
+  const text='支援きろく帖の記録（'+dateLabel(date)+'）\n'+JSON.stringify(payload);
+  const box=$('#shareResult');
+  box.innerHTML='<div class="calc">✔ <b>'+items.length+'名分</b>を書き出しました</div>'+
+    (noNick.length?'<div class="note"><b>ニックネーム未設定のため除外：</b>'+noNick.map(esc).join('、')+'</div>':'');
+  if(navigator.share){
+    try{ await navigator.share({text}); return; }catch(e){}
+  }
+  copyText(text).then(ok=>toast(ok!==false?'コピーしました。LINE等に貼り付けて送れます':'コピーできませんでした'));
+});
+function copyText(text){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text).then(()=>true).catch(()=>fallbackCopy(text));
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+function fallbackCopy(text){
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta); return ok;
+}
+$('#btnShareIn').addEventListener('click',()=>{ $('#shareInText').value=''; $('#dlgShareIn').showModal(); });
+$('#btnShareInCancel').addEventListener('click',()=>$('#dlgShareIn').close());
+$('#btnShareInDo').addEventListener('click',async ()=>{
+  const raw=$('#shareInText').value;
+  const i=raw.indexOf('{');
+  if(i<0){ toast('データが見つかりません'); return; }
+  try{
+    const d=JSON.parse(raw.slice(i));
+    if(d.app!=='shien-kiroku-share'||!Array.isArray(d.recs)){ toast('支援きろく帖の共有データではありません'); return; }
+    const date=d.date||curDate;
+    let hit=0; const missed=[];
+    for(const o of d.recs){
+      const c=children.find(x=>x.nick&&x.nick===o.nick);
+      if(!c){ missed.push(o.nick); continue; }
+      const key=date+'_'+c.id;
+      let r=await idbGet('records',key)||blankRec(date,c.id);
+      SHARE_FIELDS.forEach(f=>{ if(f in o) r[f]=o[f]; });
+      await idbPut('records',r);
+      hit++;
+    }
+    if(date===curDate){ recs={}; renderToday(); }
+    $('#dlgShareIn').close();
+    $('#shareResult').innerHTML='<div class="calc">✔ <b>'+hit+'名分</b>を取り込みました（'+dateLabel(date)+'）</div>'+
+      (missed.length?'<div class="note"><b>一致する児童がいませんでした：</b>'+missed.map(esc).join('、')+'<br>児童タブで同じニックネームを設定すると取り込めます。</div>':'');
+    toast(hit+'名分を取り込みました');
+  }catch(e){ toast('読み込めませんでした'); }
+});
 
 /* ============ 出力 ============ */
 function monthRecs(ym){ // ym: 'YYYY-MM'
