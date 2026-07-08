@@ -287,12 +287,18 @@ dialog .dfoot{
 
 <!-- ========== 出力 ========== -->
 <section class="tab" id="tab-out">
-  <h2 class="sec">月次の出力</h2>
+  <h2 class="sec">月次の点検（締め前チェック）</h2>
   <div class="card">
     <div class="fld">
       <label>対象月</label>
       <input type="month" id="outMonth" class="mini" style="width:auto;">
     </div>
+    <button class="btn p wide" id="btnCheck">🔍 この月を点検する</button>
+    <div id="checkResult" style="margin-top:10px;"></div>
+    <p class="note" style="margin-bottom:0;">サイン漏れ・入力漏れ・契約支給量オーバーなどをまとめて確認します。行をタップすると、その日の記録へ移動して直せます。</p>
+  </div>
+  <h2 class="sec">月次の出力</h2>
+  <div class="card">
     <button class="btn s wide" id="btnCsv">📄 実績記録CSVを保存（算定時間数つき）</button>
     <button class="btn s wide" id="btnPrintJisseki">🖨 実績記録票を印刷（サイン画像つき）</button>
     <button class="btn s wide" id="btnPrintShien">🖨 支援記録（療育日誌）を印刷</button>
@@ -987,6 +993,87 @@ $('#fileDailyIn').addEventListener('change',e=>{
     }catch(err){ toast('読み込めませんでした（JSONの形式をご確認ください）'); }
   };
   rd.readAsText(f,'utf-8');
+});
+
+/* ============ 月次の点検 ============ */
+function checkMonth(rows){
+  const issues=[];
+  const add=(title, sev)=>{ const g={title, sev, items:[]}; issues.push(g); return g; };
+  const gSign=add('サイン未取得（提供の都度の確認漏れ）','high');
+  const gTime=add('入退室時刻の入力漏れ（算定時間が出ません）','high');
+  const gOdd=add('時刻の異常（退室が入室より前・30分未満）','high');
+  const gAbs=add('欠席（加算）の対応記録が空欄','high');
+  const gHiya=add('ヒヤリハット・身体拘束の内容未記入','high');
+  const gStaff=add('記録者名の未記入','mid');
+  const gAct=add('活動内容が空欄（支援記録の中身）','mid');
+  rows.forEach(r=>{
+    const attend=r.kata==='after'||r.kata==='holiday';
+    if(attend){
+      if(!r.sign) gSign.items.push(r);
+      if(!r.inTime||!r.outTime) gTime.items.push(r);
+      else{
+        const st=calcSantei(r);
+        if(!st) gOdd.items.push(Object.assign({note:'退室が入室より前'},r));
+        else if(st.dur<30) gOdd.items.push(Object.assign({note:minToHM(st.dur)},r));
+      }
+      if(!r.activity) gAct.items.push(r);
+      if(!r.staff) gStaff.items.push(r);
+      if(r.hiyari&&!r.hiyariNote) gHiya.items.push(Object.assign({note:'ヒヤリハット'},r));
+      if(r.kousoku&&!r.kousokuNote) gHiya.items.push(Object.assign({note:'身体拘束'},r));
+    }
+    if(r.kata==='absent1'&&!r.episode) gAbs.items.push(r);
+  });
+  /* 契約支給量オーバー */
+  const gShikyu=add('契約支給量オーバーの可能性','high');
+  const useDays={};
+  rows.forEach(r=>{
+    if(r.kata==='after'||r.kata==='holiday'){
+      (useDays[r.childId]=useDays[r.childId]||new Set()).add(r.date);
+    }
+  });
+  Object.keys(useDays).forEach(cid=>{
+    const c=childOf(cid);
+    const limit=parseInt(c.shikyu,10);
+    if(!isNaN(limit)&&limit>0&&useDays[cid].size>limit){
+      gShikyu.items.push({date:'', childId:cid, note:'利用'+useDays[cid].size+'日／契約'+limit+'日'});
+    }
+  });
+  return issues.filter(g=>g.items.length);
+}
+function jumpTo(date){
+  setDate(date);
+  $$('.tabbar button').forEach(x=>x.classList.toggle('on', x.dataset.tab==='today'));
+  $$('section.tab').forEach(s=>s.classList.toggle('on', s.id==='tab-today'));
+  window.scrollTo(0,0);
+}
+$('#btnCheck').addEventListener('click',async ()=>{
+  const ym=$('#outMonth').value; if(!ym){ toast('対象月を選んでください'); return; }
+  const rows=await monthRecs(ym);
+  const box=$('#checkResult');
+  if(!rows.length){ box.innerHTML='<div class="empty">この月の記録がありません。</div>'; return; }
+  const issues=checkMonth(rows);
+  const total=issues.reduce((a,g)=>a+g.items.length,0);
+  if(!total){
+    box.innerHTML='<div class="calc" style="background:#e9f2ea;border-color:#bcd6c1;color:var(--ok);">✔ <b>問題は見つかりませんでした</b>（記録 '+rows.length+'件を点検）</div>';
+    return;
+  }
+  let html='<div class="calc" style="background:#faeae6;border-color:#e5c0b7;color:var(--vermil);">要確認 <b>'+total+'件</b>（記録 '+rows.length+'件を点検）</div>';
+  issues.forEach(g=>{
+    html+='<div style="font-size:13px;font-weight:700;color:'+(g.sev==='high'?'var(--vermil)':'var(--warn)')+';margin:12px 2px 4px;">'
+      +(g.sev==='high'?'⚠ ':'・')+esc(g.title)+'（'+g.items.length+'件）</div>';
+    g.items.forEach(it=>{
+      const c=childOf(it.childId);
+      html+='<div class="childRow" data-jump="'+esc(it.date)+'" style="cursor:pointer;">'
+        +'<div class="nm">'+(it.date?it.date.slice(5).replace('-','/')+'（'+WNAMES[wday(it.date)]+'）　':'')
+        +esc(c.name||'（削除済）')
+        +(it.note?'<small>'+esc(it.note)+'</small>':'')+'</div>'
+        +(it.date?'<span style="color:#8a8474;font-size:13px;">›</span>':'')+'</div>';
+    });
+  });
+  box.innerHTML=html;
+  box.querySelectorAll('[data-jump]').forEach(el=>{
+    el.addEventListener('click',()=>{ if(el.dataset.jump) jumpTo(el.dataset.jump); });
+  });
 });
 
 /* ============ 出力 ============ */
