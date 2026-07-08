@@ -239,7 +239,7 @@ dialog .dfoot{
 <!-- ========== 児童 ========== -->
 <section class="tab" id="tab-children">
   <h2 class="sec">児童の登録</h2>
-  <p class="note">「学校名」は<b>おむかえルート帖の学校名と同じ表記</b>にすると、連携時にお迎え時刻が自動で入ります。</p>
+  <p class="note">学校名は<b>おむかえルート帖のデータを読み込んで選ぶ</b>運用です（連携タブでJSONを読み込むと学校リストが更新されます）。手入力による表記ゆれを防ぎます。<span id="schoolListInfo"></span></p>
   <div id="childList"></div>
   <button class="btn p wide" id="btnAddChild">＋ 児童を追加</button>
   <h2 class="sec">マスターのやり取り（ニックネームと学校だけ）</h2>
@@ -337,7 +337,10 @@ dialog .dfoot{
       <div class="fld"><label>受給者証番号</label><input type="text" id="cJukyu" inputmode="numeric" autocomplete="off"></div>
       <div class="fld"><label>契約支給量（日/月）</label><input type="text" id="cShikyu" inputmode="numeric" autocomplete="off"></div>
     </div>
-    <div class="fld"><label>学校名（おむかえルート帖と同じ表記に）</label><input type="text" id="cSchool"></div>
+    <div class="fld"><label>学校（おむかえルート帖から取得したリスト）</label>
+      <select id="cSchoolSel" style="display:none;"></select>
+      <input type="text" id="cSchool" placeholder="学校名を入力（リスト未取得のとき）">
+    </div>
     <div class="fld"><label>保護者名</label><input type="text" id="cGuardian"></div>
     <div class="fld"><label>利用曜日（「きょう」に自動表示）</label>
       <div class="dayChips" id="cDays"></div>
@@ -722,6 +725,34 @@ function buildDayChips(sel){
     box.appendChild(lb);
   });
 }
+function renderSchoolInfo(){
+  const el=$('#schoolListInfo');
+  if(el) el.innerHTML=(settings.schools&&settings.schools.length)?'　現在のリスト：<b>'+settings.schools.length+'校</b>':'　<b>学校リスト未取得</b>';
+}
+function buildSchoolSelect(current){
+  const sel=$('#cSchoolSel'), txt=$('#cSchool');
+  const list=settings.schools||[];
+  if(!list.length){ sel.style.display='none'; txt.style.display=''; txt.value=current||''; return; }
+  let opts='<option value="">（未設定）</option>';
+  list.forEach(n=>{ opts+='<option value="'+esc(n)+'"'+(n===current?' selected':'')+'>'+esc(n)+'</option>'; });
+  const inList=!current||list.includes(current);
+  opts+='<option value="__free__"'+(!inList?' selected':'')+'>その他（直接入力）…</option>';
+  sel.innerHTML=opts;
+  sel.style.display='';
+  txt.style.display=inList?'none':'';
+  txt.value=inList?'':(current||'');
+  sel.onchange=()=>{
+    const free=sel.value==='__free__';
+    txt.style.display=free?'':'none';
+    if(free) txt.focus();
+  };
+}
+function selectedSchool(){
+  const sel=$('#cSchoolSel'), txt=$('#cSchool');
+  if(sel.style.display==='none') return txt.value.trim();
+  if(sel.value==='__free__') return txt.value.trim();
+  return sel.value;
+}
 function openChildDlg(c){
   editingChild=c||null;
   $('#dlgChildTitle').textContent=c?'児童の情報を編集':'児童を追加';
@@ -730,7 +761,7 @@ function openChildDlg(c){
   $('#cNick').value=c?c.nick||'':'';
   $('#cJukyu').value=c?c.jukyu||'':'';
   $('#cShikyu').value=c?c.shikyu||'':'';
-  $('#cSchool').value=c?c.school||'':'';
+  buildSchoolSelect(c?c.school||'':'');
   $('#cGuardian').value=c?c.guardian||'':'';
   $('#cMemo').value=c?c.memo||'':'';
   buildDayChips(c?(c.days||[]):[]);
@@ -747,7 +778,7 @@ $('#btnChildSave').addEventListener('click',async ()=>{
   if(nick && children.some(c=>c.nick===nick && c!==editingChild)){ toast('同じニックネームの児童がいます'); return; }
   const data={
     name, kana:$('#cKana').value.trim(), nick, jukyu:$('#cJukyu').value.trim(),
-    shikyu:$('#cShikyu').value.trim(), school:$('#cSchool').value.trim(),
+    shikyu:$('#cShikyu').value.trim(), school:selectedSchool(),
     guardian:$('#cGuardian').value.trim(), memo:$('#cMemo').value.trim(),
     days, active:true
   };
@@ -788,6 +819,13 @@ $('#fileRenkei').addEventListener('change',e=>{
 });
 async function applyRoute(s){
   if(!s || !Array.isArray(s.schools)){ toast('おむかえルート帖のデータではないようです'); return; }
+  /* 学校リストを更新（学校データの正本はおむかえルート帖） */
+  const names=Array.from(new Set(s.schools.map(x=>x&&x.name).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'ja'));
+  if(names.length){
+    settings.schools=names;
+    await idbPut('meta',{k:'settings',v:settings});
+    renderSchoolInfo();
+  }
   const date=$('#renkeiDate').value||todayStr();
   const picks=s.picks||{};
   /* 車両割当 schoolId -> 車両名 */
@@ -815,6 +853,7 @@ async function applyRoute(s){
   if(date===curDate){ recs={}; renderToday(); }
   const box=$('#renkeiResult');
   box.innerHTML=
+    (names.length?'<div class="calc" style="background:#e9f2ea;border-color:#bcd6c1;color:var(--ok);">🏫 学校リストを更新しました（<b>'+names.length+'校</b>）。児童登録で選べます。</div>':'')+
     '<div class="calc">✔ <b>'+hit+'名</b>に往路のお迎え時刻を反映しました（'+dateLabel(date)+'）</div>'+
     (applied.length?'<div class="note">'+applied.map(({c,m})=>esc(c.name)+'（'+esc(c.school)+' '+esc(m.time)+(m.vehicle?'・'+esc(m.vehicle):'')+(m.confirmed?'':'・<b>未確定</b>')+'）').join('<br>')+'</div>':'')+
     (missed.length?'<div class="note"><b>学校名が一致しなかった児童：</b><br>'+missed.map(c=>esc(c.name)+'（'+esc(c.school||'学校名未登録')+'）').join('<br>')+'<br>児童タブで学校名の表記を揃えると自動反映されます。</div>':'');
@@ -922,7 +961,15 @@ $('#btnShareInDo').addEventListener('click',async ()=>{
       toast('マスターを取り込みました');
       return;
     }
-    if(d.app!=='shien-kiroku-share'||!Array.isArray(d.recs)){ toast('支援きろく帖の共有データではありません'); return; }
+    if(d.app!=='shien-kiroku-share'||!Array.isArray(d.recs)){
+      /* おむかえルート帖の「書き出してコピー」テキストにも対応 */
+      if(Array.isArray(d.schools)){
+        $('#dlgShareIn').close();
+        await applyRoute(d);
+        return;
+      }
+      toast('支援きろく帖の共有データではありません'); return;
+    }
     const date=d.date||curDate;
     let hit=0; const missed=[];
     for(const o of d.recs){
@@ -1226,6 +1273,7 @@ $('#btnSaveFacility').addEventListener('click',async ()=>{
   const st=await idbGet('meta','settings');
   if(st&&st.v) settings=Object.assign({facility:''},st.v);
   $('#setFacility').value=settings.facility||'';
+  renderSchoolInfo();
   const now=todayStr();
   $('#renkeiDate').value=now;
   $('#outMonth').value=now.slice(0,7);
