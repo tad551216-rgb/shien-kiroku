@@ -242,6 +242,14 @@ dialog .dfoot{
   <p class="note">「学校名」は<b>おむかえルート帖の学校名と同じ表記</b>にすると、連携時にお迎え時刻が自動で入ります。</p>
   <div id="childList"></div>
   <button class="btn p wide" id="btnAddChild">＋ 児童を追加</button>
+  <h2 class="sec">マスターのやり取り（ニックネームと学校だけ）</h2>
+  <div class="card">
+    <p style="font-size:14px; margin:0 0 8px;">実名を含まない<b>ニックネーム＋学校名だけ</b>のマスターを書き出します。別の端末の支援きろく帖に取り込めるほか、<b>おむかえルート帖に貼り付けると学校名がそのまま追加</b>されます。</p>
+    <button class="btn s wide" id="btnMasterOut">📤 マスターを書き出す</button>
+    <button class="btn o wide" id="btnMasterIn">📥 マスターを取り込む</button>
+    <div id="masterResult" style="margin-top:10px;"></div>
+    <p class="note">取り込んだ側では、氏名がいったんニックネームで登録されます。児童タブで実名・受給者証番号などを補ってください。</p>
+  </div>
 </section>
 
 <!-- ========== 連携 ========== -->
@@ -256,6 +264,15 @@ dialog .dfoot{
     <button class="btn s wide" id="btnRenkeiFile">📂 JSONファイルを読み込む</button>
     <input type="file" id="fileRenkei" accept=".json,application/json" style="display:none;">
     <div id="renkeiResult" style="margin-top:10px;"></div>
+  </div>
+  <h2 class="sec">日次集約ファイル（サイン込み・管理者へ）</h2>
+  <div class="card">
+    <p style="font-size:14px; margin:0 0 8px;">その日の記録を<b>保護者サイン画像ごと</b>1つのJSONファイルにまとめます。担当者が書き出し、AirDrop・クラウド・メール添付などで管理者へ渡してください（<b>LINEのトークには載せない</b>運用です）。管理者側は取り込むと、既存の記録と統合（マージ）されます。</p>
+    <button class="btn s wide" id="btnDailyOut">📦 この日の集約ファイルを書き出す</button>
+    <button class="btn o wide" id="btnDailyIn">📥 集約ファイルを取り込む（マージ）</button>
+    <input type="file" id="fileDailyIn" accept=".json,application/json" style="display:none;">
+    <div id="dailyResult" style="margin-top:10px;"></div>
+    <p class="note">取り込みは記録単位の統合です（「復元」のような全置き換えはしません）。同じ日・同じ児童の記録は取り込んだ内容で上書きされますが、<b>取り込みデータにサインがない場合は手元のサインを残します</b>。</p>
   </div>
   <h2 class="sec">端末間で記録をやり取り（ニックネーム）</h2>
   <div class="card">
@@ -352,9 +369,9 @@ dialog .dfoot{
 
 <!-- 記録取り込みダイアログ -->
 <dialog id="dlgShareIn">
-  <div class="dhead">受け取った記録を取り込む</div>
+  <div class="dhead">受け取ったデータを取り込む</div>
   <div class="dbody">
-    <p style="font-size:13px; margin:0 0 8px; color:#5c574c;">LINEやメモで受け取ったテキストを、そのまま貼り付けてください。</p>
+    <p style="font-size:13px; margin:0 0 8px; color:#5c574c;">LINEやメモで受け取ったテキスト（記録・マスターどちらでも）を、そのまま貼り付けてください。</p>
     <textarea id="shareInText" style="min-height:120px;" placeholder="支援きろく帖の記録 {&quot;app&quot;:…"></textarea>
   </div>
   <div class="dfoot">
@@ -840,12 +857,65 @@ function fallbackCopy(text){
 }
 $('#btnShareIn').addEventListener('click',()=>{ $('#shareInText').value=''; $('#dlgShareIn').showModal(); });
 $('#btnShareInCancel').addEventListener('click',()=>$('#dlgShareIn').close());
+
+/* マスター書き出し（ニックネーム＋学校のみ・おむかえルート帖互換） */
+$('#btnMasterOut').addEventListener('click',()=>{
+  const list=children.filter(c=>c.active!==false);
+  const withNick=list.filter(c=>c.nick);
+  const noNick=list.filter(c=>!c.nick).map(c=>c.name);
+  if(!withNick.length){ toast('ニックネーム設定済みの児童がいません'); return; }
+  const schoolNames=Array.from(new Set(withNick.map(c=>c.school).filter(Boolean)));
+  const payload={
+    app:'shien-kiroku-master', ver:1,
+    children:withNick.map(c=>({nick:c.nick, school:c.school||''})),
+    schools:schoolNames.map(n=>({name:n, kind:'小'}))
+  };
+  const text='支援きろく帖マスター（ニックネームと学校のみ）\n'+JSON.stringify(payload);
+  $('#masterResult').innerHTML='<div class="calc">✔ <b>'+withNick.length+'名</b>・学校<b>'+schoolNames.length+'校</b>を書き出しました</div>'+
+    (noNick.length?'<div class="note"><b>ニックネーム未設定のため除外：</b>'+noNick.map(esc).join('、')+'</div>':'');
+  if(navigator.share){
+    navigator.share({text}).catch(()=>{
+      copyText(text).then(ok=>toast(ok!==false?'コピーしました':'コピーできませんでした'));
+    });
+    return;
+  }
+  copyText(text).then(ok=>toast(ok!==false?'コピーしました。LINE等に貼り付けて送れます':'コピーできませんでした'));
+});
+$('#btnMasterIn').addEventListener('click',()=>{ $('#shareInText').value=''; $('#dlgShareIn').showModal(); });
+async function applyMaster(d){
+  let added=0, updated=0;
+  for(const o of d.children){
+    if(!o||!o.nick) continue;
+    const hit=children.find(c=>c.nick===o.nick);
+    if(hit){
+      if(o.school) hit.school=o.school;
+      await idbPut('children',hit);
+      updated++;
+    }else{
+      const c={id:'c'+(++seq), name:o.nick, kana:'', nick:o.nick, jukyu:'', shikyu:'',
+        school:o.school||'', guardian:'', memo:'', days:[], active:true};
+      children.push(c);
+      await idbPut('children',c);
+      added++;
+    }
+  }
+  renderChildren(); recs={}; renderToday();
+  return {added,updated};
+}
 $('#btnShareInDo').addEventListener('click',async ()=>{
   const raw=$('#shareInText').value;
   const i=raw.indexOf('{');
   if(i<0){ toast('データが見つかりません'); return; }
   try{
     const d=JSON.parse(raw.slice(i));
+    if(d.app==='shien-kiroku-master'&&Array.isArray(d.children)){
+      const r=await applyMaster(d);
+      $('#dlgShareIn').close();
+      $('#masterResult').innerHTML='<div class="calc">✔ マスターを取り込みました（追加<b>'+r.added+'名</b>・更新<b>'+r.updated+'名</b>）</div>'+
+        (r.added?'<div class="note">追加された児童は氏名がニックネームのままです。児童タブで実名などを補ってください。</div>':'');
+      toast('マスターを取り込みました');
+      return;
+    }
     if(d.app!=='shien-kiroku-share'||!Array.isArray(d.recs)){ toast('支援きろく帖の共有データではありません'); return; }
     const date=d.date||curDate;
     let hit=0; const missed=[];
@@ -864,6 +934,59 @@ $('#btnShareInDo').addEventListener('click',async ()=>{
       (missed.length?'<div class="note"><b>一致する児童がいませんでした：</b>'+missed.map(esc).join('、')+'<br>児童タブで同じニックネームを設定すると取り込めます。</div>':'');
     toast(hit+'名分を取り込みました');
   }catch(e){ toast('読み込めませんでした'); }
+});
+
+/* ============ 日次集約ファイル（サイン込み・完全な記録） ============ */
+const DAILY_FIELDS=[...SHARE_FIELDS,'guest'];
+$('#btnDailyOut').addEventListener('click',async ()=>{
+  const date=$('#renkeiDate').value||curDate;
+  const dayRecs=(await idbByDate(date)).filter(r=>r.kata);
+  if(!dayRecs.length){ toast('この日の記録がありません'); return; }
+  const noNick=[]; const items=[]; let signCount=0;
+  dayRecs.forEach(r=>{
+    const c=childOf(r.childId);
+    if(!c.name) return;
+    if(!c.nick){ noNick.push(c.name); return; }
+    const o={nick:c.nick};
+    DAILY_FIELDS.forEach(f=>{ o[f]=r[f]; });         // 全項目を完全な形で
+    o.sign=r.sign||null; o.signAt=r.signAt||'';
+    if(o.sign) signCount++;
+    items.push(o);
+  });
+  if(!items.length){ toast('ニックネーム設定済みの児童の記録がありません'); return; }
+  const payload={app:'shien-kiroku-daily', ver:1, date, exported:new Date().toISOString(), recs:items};
+  dl(new Blob([JSON.stringify(payload)],{type:'application/json'}),'kiroku-daily-'+date+'.json');
+  $('#dailyResult').innerHTML='<div class="calc">✔ <b>'+items.length+'名分</b>を書き出しました（サイン<b>'+signCount+'</b>件を含む）</div>'+
+    (noNick.length?'<div class="note"><b>ニックネーム未設定のため除外：</b>'+noNick.map(esc).join('、')+'</div>':'');
+  toast('集約ファイルを保存しました');
+});
+$('#btnDailyIn').addEventListener('click',()=>{ $('#fileDailyIn').value=''; $('#fileDailyIn').click(); });
+$('#fileDailyIn').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=async ()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(d.app!=='shien-kiroku-daily'||!Array.isArray(d.recs)||!d.date){ toast('日次集約ファイルではありません'); return; }
+      let merged=0, signIn=0, signKept=0; const missed=[];
+      for(const o of d.recs){
+        const c=children.find(x=>x.nick&&x.nick===o.nick);
+        if(!c){ missed.push(o.nick); continue; }
+        const key=d.date+'_'+c.id;
+        let r=await idbGet('records',key)||blankRec(d.date,c.id);
+        DAILY_FIELDS.forEach(f=>{ if(f in o) r[f]=o[f]; });
+        if(o.sign){ r.sign=o.sign; r.signAt=o.signAt||''; signIn++; }
+        else if(r.sign){ signKept++; }               // 手元のサインを保護
+        await idbPut('records',r);
+        merged++;
+      }
+      if(d.date===curDate){ recs={}; renderToday(); }
+      $('#dailyResult').innerHTML='<div class="calc">✔ <b>'+merged+'名分</b>を統合しました（'+dateLabel(d.date)+'）<br>取り込んだサイン <b>'+signIn+'</b>件'+(signKept?'／手元のサインを保持 '+signKept+'件':'')+'</div>'+
+        (missed.length?'<div class="note"><b>一致する児童がいませんでした：</b>'+missed.map(esc).join('、')+'<br>児童タブで同じニックネームを設定して、もう一度取り込んでください。</div>':'');
+      toast(merged+'名分を統合しました');
+    }catch(err){ toast('読み込めませんでした（JSONの形式をご確認ください）'); }
+  };
+  rd.readAsText(f,'utf-8');
 });
 
 /* ============ 出力 ============ */
