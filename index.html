@@ -153,6 +153,7 @@ dialog{
   box-shadow:0 8px 30px rgba(30,58,88,.35);
 }
 dialog::backdrop{background:rgba(43,42,38,.45);}
+dialog .dhead:focus{ outline:none; }
 dialog .dhead{
   background:var(--indigo); color:#fdfbf4; padding:12px 16px;
   font-family:var(--serif); font-size:16px; letter-spacing:.05em;
@@ -341,20 +342,20 @@ dialog .dfoot{
 
 <!-- 児童編集ダイアログ -->
 <dialog id="dlgChild">
-  <div class="dhead" id="dlgChildTitle">児童を追加</div>
+  <div class="dhead" id="dlgChildTitle" tabindex="-1" autofocus>児童を追加</div>
   <div class="dbody">
-    <div class="fld"><label>氏名 *</label><input type="text" id="cName"></div>
-    <div class="fld"><label>ふりがな</label><input type="text" id="cKana"></div>
-    <div class="fld"><label>ニックネーム（データやり取り用・実名の代わりに使います）</label><input type="text" id="cNick" placeholder="例：たろちゃん"></div>
+    <div class="fld"><label>氏名 *</label><input type="text" id="cName" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="fld"><label>ふりがな</label><input type="text" id="cKana" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="fld"><label>ニックネーム（データやり取り用・実名の代わりに使います）</label><input type="text" id="cNick" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="例：たろちゃん"></div>
     <div class="grid2">
       <div class="fld"><label>受給者証番号</label><input type="text" id="cJukyu" inputmode="numeric" autocomplete="off"></div>
       <div class="fld"><label>契約支給量（日/月）</label><input type="text" id="cShikyu" inputmode="numeric" autocomplete="off"></div>
     </div>
     <div class="fld"><label>学校（おむかえルート帖から取得したリスト）</label>
       <select id="cSchoolSel" style="display:none;"></select>
-      <input type="text" id="cSchool" placeholder="学校名を入力（リスト未取得のとき）">
+      <input type="text" id="cSchool" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="学校名を入力（リスト未取得のとき）">
     </div>
-    <div class="fld"><label>保護者名</label><input type="text" id="cGuardian"></div>
+    <div class="fld"><label>保護者名</label><input type="text" id="cGuardian" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
     <div class="fld"><label>保護者連携の合言葉（おうち連絡帖用・省略可）</label><input type="text" id="cAikotoba" autocomplete="off" placeholder="家庭ごとに決めて紙や口頭で渡す"></div>
     <div class="fld"><label>利用曜日（「きょう」に自動表示）</label>
       <div class="dayChips" id="cDays"></div>
@@ -370,7 +371,7 @@ dialog .dfoot{
 
 <!-- サインダイアログ -->
 <dialog id="dlgSign">
-  <div class="dhead" id="dlgSignTitle">保護者サイン</div>
+  <div class="dhead" id="dlgSignTitle" tabindex="-1" autofocus>保護者サイン</div>
   <div class="dbody">
     <p style="font-size:13px; margin:0 0 8px; color:#5c574c;">本日のサービス提供内容をご確認のうえ、下の枠内にサインをお願いします。</p>
     <canvas id="signCanvas"></canvas>
@@ -385,7 +386,7 @@ dialog .dfoot{
 
 <!-- お知らせ作成ダイアログ -->
 <dialog id="dlgNews">
-  <div class="dhead">お知らせを作って送る</div>
+  <div class="dhead" tabindex="-1" autofocus>お知らせを作って送る</div>
   <div class="dbody">
     <div class="fld"><label>件名</label><input type="text" id="nwTitle" placeholder="例：8月の療育スケジュールについて"></div>
     <div class="fld"><label>内容</label><textarea id="nwBody" style="min-height:110px;" placeholder="例：8/11〜8/15はお盆休みです。夏祭りは8/20（木）14時から…"></textarea></div>
@@ -399,14 +400,14 @@ dialog .dfoot{
 
 <!-- ゲスト追加ダイアログ -->
 <dialog id="dlgGuest">
-  <div class="dhead">この日だけ利用する児童</div>
+  <div class="dhead" tabindex="-1" autofocus>この日だけ利用する児童</div>
   <div class="dbody" id="guestList"></div>
   <div class="dfoot"><button class="btn o sm" id="btnGuestClose">とじる</button></div>
 </dialog>
 
 <!-- 記録取り込みダイアログ -->
 <dialog id="dlgShareIn">
-  <div class="dhead">受け取ったデータを取り込む</div>
+  <div class="dhead" tabindex="-1" autofocus>受け取ったデータを取り込む</div>
   <div class="dbody">
     <p style="font-size:13px; margin:0 0 8px; color:#5c574c;">LINEやメモで受け取ったテキスト（記録・マスターどちらでも）を、そのまま貼り付けてください。</p>
     <textarea id="shareInText" style="min-height:120px;" placeholder="支援きろく帖の記録 {&quot;app&quot;:…"></textarea>
@@ -628,7 +629,7 @@ function childCard(c,r){
       '</div>'+
       (r.hiyari?'<div class="fld"><label>ヒヤリハット・事故の内容と対応</label><textarea data-f="hiyariNote">'+esc(r.hiyariNote)+'</textarea></div>':'')+
       (r.kousoku?'<div class="fld"><label>身体拘束の理由・態様・開始/終了時刻（必須）</label><textarea data-f="kousokuNote">'+esc(r.kousokuNote)+'</textarea></div>':'')+
-      '<div class="fld"><label>記録者（職員氏名）</label><input type="text" data-f="staff" value="'+esc(r.staff)+'"></div>'+
+      '<div class="fld"><label>記録者（職員氏名）</label><input type="text" data-f="staff" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false" value="'+esc(r.staff)+'"></div>'+
     '</details>':'');
   /* イベント */
   el.querySelectorAll('.seg[data-f=kata] button').forEach(b=>{
@@ -797,6 +798,7 @@ function openChildDlg(c){
   buildDayChips(c?(c.days||[]):[]);
   $('#btnChildDel').style.display=c?'':'none';
   $('#dlgChild').showModal();
+  if(document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) document.activeElement.blur();
 }
 $('#btnAddChild').addEventListener('click',()=>openChildDlg(null));
 $('#btnChildCancel').addEventListener('click',()=>$('#dlgChild').close());
