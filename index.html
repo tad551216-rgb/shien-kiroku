@@ -946,7 +946,7 @@ function buildMaster(){
   const schoolNames=Array.from(new Set(withNick.map(c=>c.school).filter(Boolean)));
   const payload={
     app:'shien-kiroku-master', ver:1,
-    children:withNick.map(c=>({nick:c.nick, school:c.school||''})),
+    children:withNick.map(c=>({nick:c.nick, school:c.school||'', days:Array.isArray(c.days)?c.days:[]})),
     schools:schoolNames.map(n=>({name:n, kind:'小'}))
   };
   const text='支援きろく帖マスター（ニックネームと学校のみ）\n'+JSON.stringify(payload);
@@ -998,11 +998,12 @@ async function applyMaster(d){
     const hit=children.find(c=>c.nick===o.nick);
     if(hit){
       if(o.school) hit.school=o.school;
+      if(Array.isArray(o.days) && o.days.length) hit.days=o.days;
       await idbPut('children',hit);
       updated++;
     }else{
       const c={id:'c'+(++seq), name:o.nick, kana:'', nick:o.nick, jukyu:'', shikyu:'',
-        school:o.school||'', guardian:'', memo:'', days:[], active:true};
+        school:o.school||'', guardian:'', memo:'', days:Array.isArray(o.days)?o.days:[], active:true};
       children.push(c);
       await idbPut('children',c);
       added++;
