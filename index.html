@@ -246,6 +246,7 @@ dialog .dfoot{
   <h2 class="sec">マスターのやり取り（ニックネームと学校だけ）</h2>
   <div class="card">
     <p style="font-size:14px; margin:0 0 8px;">実名を含まない<b>ニックネーム＋学校名だけ</b>のマスターです。<b>同じ端末のおむかえルート帖に渡すときは「コピーする」</b>、LINE等で別の端末に送るときは「書き出す」を使ってください。</p>
+    <p class="note" style="margin:0 0 8px;"><b>おむかえルート帖を先に使っていた場合</b>は、逆向きに始められます。ルート帖の設定タブ →「児童データ」→「📤 支援きろく帖へ渡す（児童＋学校）」でコピーし、下の「📥 マスターを取り込む」に貼り付けてください。<b>児童と学校リストが同時に登録されます。</b></p>
     <button class="btn s wide" id="btnMasterCopy">📋 コピーする（おむかえルート帖へ貼り付け）</button>
     <button class="btn o wide" id="btnMasterOut">📤 マスターを書き出す（共有・LINEで送る）</button>
     <button class="btn o wide" id="btnMasterIn">📥 マスターを取り込む</button>
@@ -979,7 +980,19 @@ $('#btnMasterOut').addEventListener('click',()=>{
 });
 $('#btnMasterIn').addEventListener('click',()=>{ $('#shareInText').value=''; $('#dlgShareIn').showModal(); });
 async function applyMaster(d){
-  let added=0, updated=0;
+  let added=0, updated=0, schoolsUpdated=0;
+  /* おむかえルート帖から渡されたマスターには学校も入っている。学校リストも同時に更新する */
+  if(Array.isArray(d.schools)){
+    const names=Array.from(new Set(
+      d.schools.map(x=>x&&x.name).filter(Boolean).concat(settings.schools||[])
+    )).sort((a,b)=>a.localeCompare(b,'ja'));
+    if(names.length && names.join('\u0001')!==(settings.schools||[]).join('\u0001')){
+      settings.schools=names;
+      await idbPut('meta',{k:'settings',v:settings});
+      renderSchoolInfo();
+      schoolsUpdated=names.length;
+    }
+  }
   for(const o of d.children){
     if(!o||!o.nick) continue;
     const hit=children.find(c=>c.nick===o.nick);
@@ -996,7 +1009,7 @@ async function applyMaster(d){
     }
   }
   renderChildren(); recs={}; renderToday();
-  return {added,updated};
+  return {added,updated,schoolsUpdated};
 }
 $('#btnShareInDo').addEventListener('click',async ()=>{
   const raw=$('#shareInText').value;
@@ -1011,7 +1024,8 @@ $('#btnShareInDo').addEventListener('click',async ()=>{
       const r=await applyMaster(d);
       $('#dlgShareIn').close();
       $('#masterResult').innerHTML='<div class="calc">✔ マスターを取り込みました（追加<b>'+r.added+'名</b>・更新<b>'+r.updated+'名</b>）</div>'+
-        (r.added?'<div class="note">追加された児童は氏名がニックネームのままです。児童タブで実名などを補ってください。</div>':'');
+        (r.schoolsUpdated?'<div class="calc" style="background:#e9f2ea;border-color:#bcd6c1;color:var(--ok);">🏫 学校リストも更新しました（<b>'+r.schoolsUpdated+'校</b>）。児童登録で選べます。</div>':'')+
+        (r.added?'<div class="note">追加された児童は氏名がニックネームのままです。児童タブで実名・ふりがな・受給者証番号・利用曜日などを補ってください。</div>':'');
       toast('マスターを取り込みました');
       return;
     }
