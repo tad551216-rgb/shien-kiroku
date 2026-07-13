@@ -245,8 +245,9 @@ dialog .dfoot{
   <button class="btn p wide" id="btnAddChild">＋ 児童を追加</button>
   <h2 class="sec">マスターのやり取り（ニックネームと学校だけ）</h2>
   <div class="card">
-    <p style="font-size:14px; margin:0 0 8px;">実名を含まない<b>ニックネーム＋学校名だけ</b>のマスターを書き出します。別の端末の支援きろく帖に取り込めるほか、<b>おむかえルート帖に貼り付けると学校名がそのまま追加</b>されます。</p>
-    <button class="btn s wide" id="btnMasterOut">📤 マスターを書き出す</button>
+    <p style="font-size:14px; margin:0 0 8px;">実名を含まない<b>ニックネーム＋学校名だけ</b>のマスターです。<b>同じ端末のおむかえルート帖に渡すときは「コピーする」</b>、LINE等で別の端末に送るときは「書き出す」を使ってください。</p>
+    <button class="btn s wide" id="btnMasterCopy">📋 コピーする（おむかえルート帖へ貼り付け）</button>
+    <button class="btn o wide" id="btnMasterOut">📤 マスターを書き出す（共有・LINEで送る）</button>
     <button class="btn o wide" id="btnMasterIn">📥 マスターを取り込む</button>
     <div id="masterResult" style="margin-top:10px;"></div>
     <p class="note">取り込んだ側では、氏名がいったんニックネームで登録されます。児童タブで実名・受給者証番号などを補ってください。</p>
@@ -936,11 +937,11 @@ $('#btnShareIn').addEventListener('click',()=>{ $('#shareInText').value=''; $('#
 $('#btnShareInCancel').addEventListener('click',()=>$('#dlgShareIn').close());
 
 /* マスター書き出し（ニックネーム＋学校のみ・おむかえルート帖互換） */
-$('#btnMasterOut').addEventListener('click',()=>{
+function buildMaster(){
   const list=children.filter(c=>c.active!==false);
   const withNick=list.filter(c=>c.nick);
   const noNick=list.filter(c=>!c.nick).map(c=>c.name);
-  if(!withNick.length){ toast('ニックネーム設定済みの児童がいません'); return; }
+  if(!withNick.length){ toast('ニックネーム設定済みの児童がいません'); return null; }
   const schoolNames=Array.from(new Set(withNick.map(c=>c.school).filter(Boolean)));
   const payload={
     app:'shien-kiroku-master', ver:1,
@@ -948,15 +949,33 @@ $('#btnMasterOut').addEventListener('click',()=>{
     schools:schoolNames.map(n=>({name:n, kind:'小'}))
   };
   const text='支援きろく帖マスター（ニックネームと学校のみ）\n'+JSON.stringify(payload);
-  $('#masterResult').innerHTML='<div class="calc">✔ <b>'+withNick.length+'名</b>・学校<b>'+schoolNames.length+'校</b>を書き出しました</div>'+
-    (noNick.length?'<div class="note"><b>ニックネーム未設定のため除外：</b>'+noNick.map(esc).join('、')+'</div>':'');
+  return {text, n:withNick.length, schools:schoolNames.length, noNick};
+}
+function showMasterResult(m, msg){
+  $('#masterResult').innerHTML='<div class="calc">✔ '+msg+'（児童<b>'+m.n+'名</b>・学校<b>'+m.schools+'校</b>）</div>'+
+    (m.noNick.length?'<div class="note"><b>ニックネーム未設定のため除外：</b>'+m.noNick.map(esc).join('、')+'</div>':'');
+}
+/* ① コピーする：共有シートを出さず、クリップボードへ直接。おむかえルート帖に貼り付ける用 */
+$('#btnMasterCopy').addEventListener('click',()=>{
+  const m=buildMaster(); if(!m) return;
+  copyText(m.text).then(ok=>{
+    if(ok===false){ toast('コピーできませんでした'); return; }
+    showMasterResult(m,'コピーしました');
+    $('#masterResult').innerHTML+='<div class="note">おむかえルート帖を開き、<b>設定タブの「読み込む」</b>（またはサインタブの「マスターを読み込む」）に貼り付けてください。</div>';
+    toast('コピーしました。おむかえルート帖に貼り付けてください');
+  });
+});
+/* ② 書き出す：共有シート経由（LINE等で別端末に送る用） */
+$('#btnMasterOut').addEventListener('click',()=>{
+  const m=buildMaster(); if(!m) return;
+  showMasterResult(m,'書き出しました');
   if(navigator.share){
-    navigator.share({text}).catch(()=>{
-      copyText(text).then(ok=>toast(ok!==false?'コピーしました':'コピーできませんでした'));
+    navigator.share({text:m.text}).catch(()=>{
+      copyText(m.text).then(ok=>toast(ok!==false?'コピーしました':'コピーできませんでした'));
     });
     return;
   }
-  copyText(text).then(ok=>toast(ok!==false?'コピーしました。LINE等に貼り付けて送れます':'コピーできませんでした'));
+  copyText(m.text).then(ok=>toast(ok!==false?'コピーしました。LINE等に貼り付けて送れます':'コピーできませんでした'));
 });
 $('#btnMasterIn').addEventListener('click',()=>{ $('#shareInText').value=''; $('#dlgShareIn').showModal(); });
 async function applyMaster(d){
