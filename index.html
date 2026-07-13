@@ -242,6 +242,7 @@ dialog .dfoot{
 <!-- ========== 児童 ========== -->
 <section class="tab" id="tab-children">
   <h2 class="sec">児童の登録</h2>
+  <p class="note">ニックネームは、おうち連絡帖・おむかえルート帖との<b>照合キー</b>です。あとから変えると連携が切れるので、最初に決めて動かさないのが安全です。</p>
   <p class="note">学校名は<b>おむかえルート帖のデータを読み込んで選ぶ</b>運用です（連携タブでJSONを読み込むと学校リストが更新されます）。手入力による表記ゆれを防ぎます。<span id="schoolListInfo"></span></p>
   <div id="childList"></div>
   <button class="btn p wide" id="btnAddChild">＋ 児童を追加</button>
@@ -823,6 +824,16 @@ $('#btnChildSave').addEventListener('click',async ()=>{
   const days=$$('#cDays label.on').map(l=>+l.dataset.d);
   const nick=$('#cNick').value.trim();
   if(nick && children.some(c=>c.nick===nick && c!==editingChild)){ toast('同じニックネームの児童がいます'); return; }
+  /* ニックネームは、おうち連絡帖・おむかえルート帖との照合キー。変更は連携が切れる */
+  if(editingChild && editingChild.nick && nick!==editingChild.nick){
+    let msg='ニックネームを変更します。\n\n旧：'+editingChild.nick+'\n新：'+(nick||'（なし）')+'\n\n'
+      +'ニックネームは、おうち連絡帖・おむかえルート帖との照合に使っています。\n';
+    if(editingChild.pubkey){
+      msg+='\n【保護者連携が切れます】この児童は保護者のかぎが登録済みです。おうち連絡帖でも「✏️ 名前・合言葉だけ直す」で同じ名前に直してもらってください。かぎの作り直しは不要です。\n';
+    }
+    msg+='\nおむかえルート帖には、あらためてマスターを取り込み直してください（過去のサインは旧の名前のまま残ります）。\n\n続けますか？';
+    if(!confirm(msg)) return;
+  }
   const data={
     name, kana:$('#cKana').value.trim(), nick, jukyu:$('#cJukyu').value.trim(),
     shikyu:$('#cShikyu').value.trim(), school:selectedSchool(),
