@@ -88,6 +88,7 @@ h2.sec{
 }
 .chip.v{background:#faeae6; color:var(--vermil); border-color:#e5c0b7;}
 .chip.g{background:#e9f2ea; color:var(--ok); border-color:#bcd6c1;}
+.chip.v{background:#fdeee9; color:var(--verm); border-color:#f0c4b6; font-weight:700;}
 .row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:6px 0;}
 .row label{font-size:13px; color:#5c574c;}
 .seg{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0;}
@@ -232,6 +233,7 @@ dialog .dfoot{
 <!-- ========== きょうの記録 ========== -->
 <section class="tab on" id="tab-today">
   <div class="sumBar" id="sumBar"></div>
+  <p class="note" id="noDayWarn" style="display:none;color:var(--verm);font-weight:700;margin-top:0;"></p>
   <div id="todayList"></div>
   <button class="btn o wide" id="btnAddGuest">＋ この日だけ利用する児童を追加</button>
   <p class="note">入室〜退室の時間から算定時間数を自動計算します（送迎時間は含みません）。区分表示はあくまで参考です。実際の請求区分は、必ずお使いの請求ソフト・最新の告示でご確認ください。</p>
@@ -544,7 +546,16 @@ async function todayChildIds(){
   const extra=dayRecs.filter(r=>r.guest||r.kata||r.sign||r.activity).map(r=>r.childId);
   return Array.from(new Set([...regular,...extra])).filter(id=>children.some(c=>c.id===id));
 }
+function renderNoDayWarn(){
+  const el=$('#noDayWarn'); if(!el) return;
+  const nd=children.filter(c=>c.active!==false && (!Array.isArray(c.days)||!c.days.length));
+  if(!nd.length){ el.style.display='none'; return; }
+  el.style.display='';
+  el.innerHTML='⚠ 利用曜日が未設定の児童が'+nd.length+'名います（'+esc(nd.map(c=>c.name).join('・'))
+    +'）。「きょう」には自動表示されません。児童タブで曜日を設定するか、スポット利用なら下の「＋ この日だけ利用する児童を追加」からどうぞ。';
+}
 async function renderToday(){
+  renderNoDayWarn();
   const ids=await todayChildIds();
   const list=$('#todayList');
   if(ids.length===0){
@@ -739,7 +750,9 @@ function renderChildren(){
     const row=document.createElement('div');
     row.className='childRow';
     const days=(c.days||[]).map(d=>WNAMES[d]).join('・');
+    const noDay=!Array.isArray(c.days)||!c.days.length;
     row.innerHTML='<div class="nm">'+esc(c.name)+(c.nick?' <span class="chip g">'+esc(c.nick)+'</span>':'')+(c.active===false?' <span class="chip">休止中</span>':'')+
+      (noDay&&c.active!==false?' <span class="chip v">曜日未設定</span>':'')+
       '<small>'+esc(c.school||'')+(days?'　'+days+'曜':'')+(c.jukyu?'　受給者証 '+esc(c.jukyu):'')+'</small></div>'+
       '<button class="btn o sm">編集</button>';
     row.querySelector('button').addEventListener('click',()=>openChildDlg(c));
